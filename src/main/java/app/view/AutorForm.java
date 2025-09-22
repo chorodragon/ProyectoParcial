@@ -1,5 +1,6 @@
 package app.view;
 
+import app.core.ValidationUtil;
 import app.dao.AutorDAO;
 import app.model.Autor;
 
@@ -13,121 +14,292 @@ public class AutorForm {
     public JPanel panelPrincipal;
     private JTextField txtNombre;
     private JTextArea txtBiografia;
-    private JComboBox<String> cboEstado; // "1 - Activo" / "0 - Inactivo"
+    private JComboBox<String> cboEstado;
     private JButton btnGuardar;
+    private JButton btnActualizar;
+    private JButton btnEliminar;
     private JButton btnCargar;
     private JTable tblAutores;
-    private JButton btnActualizar; // <-- nuevo botón
+    private JTextField txtBuscar;
 
     private final AutorDAO autorDAO = new AutorDAO();
     private final DefaultTableModel model = new DefaultTableModel(
             new Object[]{"ID", "Nombre", "Biografía", "Estado"}, 0
     );
 
-    // guardamos el ID seleccionado para actualizar
     private Integer selectedId = null;
 
     public AutorForm() {
-        panelPrincipal.setPreferredSize(new Dimension(900, 600));
+        initializeComponents();
+        setupEventListeners();
+        cargarTabla();
+    }
 
-        tblAutores.setModel(model);
+    private void initializeComponents() {
+        panelPrincipal = new JPanel(new BorderLayout());
+        
+        // Panel de formulario
+        JPanel formPanel = new JPanel(new GridBagLayout());
+        GridBagConstraints gbc = new GridBagConstraints();
+        
+        gbc.insets = new Insets(5, 5, 5, 5);
+        
+        // Nombre
+        gbc.gridx = 0; gbc.gridy = 0; gbc.anchor = GridBagConstraints.EAST;
+        formPanel.add(new JLabel("Nombre:"), gbc);
+        
+        gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0;
+        txtNombre = new JTextField(20);
+        formPanel.add(txtNombre, gbc);
+        
+        // Biografía
+        gbc.gridx = 0; gbc.gridy = 1; gbc.anchor = GridBagConstraints.NORTHEAST; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0;
+        formPanel.add(new JLabel("Biografía:"), gbc);
+        
+        gbc.gridx = 1; gbc.fill = GridBagConstraints.BOTH; gbc.weightx = 1.0; gbc.weighty = 0.3;
+        txtBiografia = new JTextArea(4, 20);
+        txtBiografia.setLineWrap(true);
+        txtBiografia.setWrapStyleWord(true);
+        JScrollPane scrollBio = new JScrollPane(txtBiografia);
+        formPanel.add(scrollBio, gbc);
+        
+        // Estado
+        gbc.gridx = 0; gbc.gridy = 2; gbc.anchor = GridBagConstraints.EAST; gbc.fill = GridBagConstraints.NONE; gbc.weightx = 0; gbc.weighty = 0;
+        formPanel.add(new JLabel("Estado:"), gbc);
+        
+        gbc.gridx = 1; gbc.fill = GridBagConstraints.HORIZONTAL; gbc.weightx = 1.0;
+        cboEstado = new JComboBox<>(new String[]{"1 - Activo", "0 - Inactivo"});
+        formPanel.add(cboEstado, gbc);
+        
+        // Botones
+        JPanel buttonPanel = new JPanel(new FlowLayout());
+        btnGuardar = new JButton("Guardar");
+        btnActualizar = new JButton("Actualizar");
+        btnEliminar = new JButton("Eliminar");
+        btnCargar = new JButton("Cargar");
+        
+        buttonPanel.add(btnGuardar);
+        buttonPanel.add(btnActualizar);
+        buttonPanel.add(btnEliminar);
+        buttonPanel.add(btnCargar);
+        
+        gbc.gridx = 0; gbc.gridy = 3; gbc.gridwidth = 2;
+        formPanel.add(buttonPanel, gbc);
+        
+        // Panel de búsqueda
+        JPanel searchPanel = new JPanel(new FlowLayout(FlowLayout.LEFT));
+        searchPanel.add(new JLabel("Buscar por nombre:"));
+        txtBuscar = new JTextField(20);
+        searchPanel.add(txtBuscar);
+        
+        // Tabla
+        tblAutores = new JTable(model);
         tblAutores.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
+        JScrollPane scrollPane = new JScrollPane(tblAutores);
+        scrollPane.setPreferredSize(new Dimension(600, 300));
+        
+        JPanel centerPanel = new JPanel(new BorderLayout());
+        centerPanel.add(searchPanel, BorderLayout.NORTH);
+        centerPanel.add(scrollPane, BorderLayout.CENTER);
+        
+        panelPrincipal.add(formPanel, BorderLayout.NORTH);
+        panelPrincipal.add(centerPanel, BorderLayout.CENTER);
+        
+        panelPrincipal.setPreferredSize(new Dimension(700, 600));
+        
+        // Configurar modo inicial
+        modoCreacion();
+    }
 
-        // Combo de estado
-        cboEstado.addItem("1 - Activo");
-        cboEstado.addItem("0 - Inactivo");
-        cboEstado.setSelectedIndex(0);
-
-        // Listeners
+    private void setupEventListeners() {
         btnGuardar.addActionListener(e -> onGuardar());
-        btnCargar.addActionListener(e -> cargarTabla());
         btnActualizar.addActionListener(e -> onActualizar());
+        btnEliminar.addActionListener(e -> onEliminar());
+        btnCargar.addActionListener(e -> cargarTabla());
 
-        // Cuando selecciono una fila, cargo los datos en los campos
         tblAutores.getSelectionModel().addListSelectionListener(this::onTableSelection);
+        
+        // Búsqueda en tiempo real
+        txtBuscar.addKeyListener(new java.awt.event.KeyAdapter() {
+            public void keyReleased(java.awt.event.KeyEvent evt) {
+                buscarAutores();
+            }
+        });
     }
 
     private void onTableSelection(ListSelectionEvent e) {
-        if (e.getValueIsAdjusting()) return; // evitar doble disparo
+        if (e.getValueIsAdjusting()) return;
         int row = tblAutores.getSelectedRow();
         if (row == -1) {
             selectedId = null;
+            modoCreacion();
             return;
         }
-        // Leemos desde el modelo de la tabla
-        Object idVal   = model.getValueAt(row, 0);
-        Object nomVal  = model.getValueAt(row, 1);
-        Object bioVal  = model.getValueAt(row, 2);
-        Object estVal  = model.getValueAt(row, 3); // "Activo"/"Inactivo" o 1/0 según como llenes
 
-        // Guardamos el id seleccionado
-        selectedId = (idVal != null) ? Integer.parseInt(idVal.toString()) : null;
+        selectedId = Integer.parseInt(model.getValueAt(row, 0).toString());
+        txtNombre.setText(model.getValueAt(row, 1).toString());
+        txtBiografia.setText(model.getValueAt(row, 2) != null ? model.getValueAt(row, 2).toString() : "");
 
-        // Cargamos los campos
-        txtNombre.setText(nomVal != null ? nomVal.toString() : "");
-        txtBiografia.setText(bioVal != null ? bioVal.toString() : "");
+        String estTxt = model.getValueAt(row, 3).toString();
+        cboEstado.setSelectedIndex("Activo".equalsIgnoreCase(estTxt) ? 0 : 1);
+        
+        modoActualizacion();
+    }
 
-        // Ajusta estado en combo
-        // Si en la tabla pusiste "Activo"/"Inactivo":
-        if (estVal != null && estVal.toString().equalsIgnoreCase("Activo")) {
-            cboEstado.setSelectedIndex(0); // 1
-        } else if (estVal != null && estVal.toString().equalsIgnoreCase("Inactivo")) {
-            cboEstado.setSelectedIndex(1); // 0
-        } else {
-            // Si prefieres cargar 1/0 directo en la tabla, haz:
-            // int est = Integer.parseInt(estVal.toString());
-            // cboEstado.setSelectedIndex(est == 1 ? 0 : 1);
-        }
+    private void modoCreacion() {
+        btnGuardar.setVisible(true);
+        btnActualizar.setVisible(false);
+        btnEliminar.setVisible(false);
+    }
+
+    private void modoActualizacion() {
+        btnGuardar.setVisible(false);
+        btnActualizar.setVisible(true);
+        btnEliminar.setVisible(true);
     }
 
     private void onGuardar() {
         String nombre = txtNombre.getText().trim();
-        String bio    = txtBiografia.getText().trim();
-        int estado    = (cboEstado.getSelectedIndex() == 0) ? 1 : 0;
+        String biografia = txtBiografia.getText().trim();
+        int estado = (cboEstado.getSelectedIndex() == 0) ? 1 : 0;
 
-        if (nombre.isEmpty()) {
+        // Validaciones
+        String error = ValidationUtil.validateRequired(nombre, "Nombre");
+        if (error != null) {
+            ValidationUtil.showError(error);
             txtNombre.requestFocus();
-            txtNombre.setToolTipText("El nombre es obligatorio");
             return;
         }
 
         try {
-            Autor a = new Autor(nombre, bio, estado);
-            autorDAO.insertar(a);
-            limpiarFormulario();
-            cargarTabla();
-            selectedId = null; // reseteo selección
+            Autor autor = new Autor(nombre, biografia, estado);
+            int id = autorDAO.insertar(autor);
+            if (id > 0) {
+                ValidationUtil.showSuccess("Autor guardado exitosamente");
+                limpiarFormulario();
+                cargarTabla();
+            } else {
+                ValidationUtil.showError("No se pudo guardar el autor");
+            }
         } catch (Exception ex) {
+            ValidationUtil.showError("Error al guardar el autor: " + ex.getMessage());
             ex.printStackTrace();
         }
     }
 
     private void onActualizar() {
         if (selectedId == null) {
-            // No hay fila seleccionada
+            ValidationUtil.showError("Seleccione un autor para actualizar");
             return;
         }
-        String nombre = txtNombre.getText().trim();
-        String bio    = txtBiografia.getText().trim();
-        int estado    = (cboEstado.getSelectedIndex() == 0) ? 1 : 0;
 
-        if (nombre.isEmpty()) {
+        String nombre = txtNombre.getText().trim();
+        String biografia = txtBiografia.getText().trim();
+        int estado = (cboEstado.getSelectedIndex() == 0) ? 1 : 0;
+
+        // Validaciones
+        String error = ValidationUtil.validateRequired(nombre, "Nombre");
+        if (error != null) {
+            ValidationUtil.showError(error);
             txtNombre.requestFocus();
-            txtNombre.setToolTipText("El nombre es obligatorio");
+            return;
+        }
+
+        if (!ValidationUtil.showConfirmation("¿Está seguro de actualizar este autor?")) {
             return;
         }
 
         try {
-            Autor a = new Autor(selectedId, nombre, bio, estado);
-            boolean ok = autorDAO.actualizar(a);
+            Autor autor = new Autor(selectedId, nombre, biografia, estado);
+            boolean ok = autorDAO.actualizar(autor);
             if (ok) {
+                ValidationUtil.showSuccess("Autor actualizado exitosamente");
                 cargarTabla();
-                // Mantener selección: opcional
                 seleccionarFilaPorId(selectedId);
+            } else {
+                ValidationUtil.showError("No se pudo actualizar el autor");
             }
         } catch (Exception ex) {
+            ValidationUtil.showError("Error al actualizar el autor: " + ex.getMessage());
             ex.printStackTrace();
         }
+    }
+
+    private void onEliminar() {
+        if (selectedId == null) {
+            ValidationUtil.showError("Seleccione un autor para eliminar");
+            return;
+        }
+
+        if (!ValidationUtil.showConfirmation("¿Está seguro de eliminar este autor?\nEsta acción marcará el autor como inactivo.")) {
+            return;
+        }
+
+        try {
+            boolean ok = autorDAO.eliminarLogico(selectedId);
+            if (ok) {
+                ValidationUtil.showSuccess("Autor eliminado exitosamente");
+                limpiarFormulario();
+                cargarTabla();
+            } else {
+                ValidationUtil.showError("No se pudo eliminar el autor");
+            }
+        } catch (Exception ex) {
+            ValidationUtil.showError("Error al eliminar el autor: " + ex.getMessage());
+            ex.printStackTrace();
+        }
+    }
+
+    private void cargarTabla() {
+        try {
+            List<Autor> lista = autorDAO.listar();
+            model.setRowCount(0);
+            for (Autor autor : lista) {
+                model.addRow(new Object[]{
+                        autor.getId(),
+                        autor.getNombre(),
+                        autor.getBiografia(),
+                        autor.getEstado() == 1 ? "Activo" : "Inactivo"
+                });
+            }
+        } catch (Exception ex) {
+            ValidationUtil.showError("Error al cargar autores: " + ex.getMessage());
+            ex.printStackTrace();
+        }
+    }
+
+    private void buscarAutores() {
+        String termino = txtBuscar.getText().trim();
+        if (termino.isEmpty()) {
+            cargarTabla();
+            return;
+        }
+        
+        try {
+            List<Autor> lista = autorDAO.buscarPorNombre(termino);
+            model.setRowCount(0);
+            for (Autor autor : lista) {
+                model.addRow(new Object[]{
+                        autor.getId(),
+                        autor.getNombre(),
+                        autor.getBiografia(),
+                        autor.getEstado() == 1 ? "Activo" : "Inactivo"
+                });
+            }
+        } catch (Exception ex) {
+            ValidationUtil.showError("Error al buscar autores: " + ex.getMessage());
+            ex.printStackTrace();
+        }
+    }
+
+    private void limpiarFormulario() {
+        txtNombre.setText("");
+        txtBiografia.setText("");
+        cboEstado.setSelectedIndex(0);
+        tblAutores.clearSelection();
+        txtBuscar.setText("");
+        selectedId = null;
+        modoCreacion();
     }
 
     private void seleccionarFilaPorId(Integer id) {
@@ -139,30 +311,6 @@ public class AutorForm {
                 break;
             }
         }
-    }
-
-    private void cargarTabla() {
-        try {
-            List<Autor> lista = autorDAO.listar();
-            model.setRowCount(0);
-            for (Autor a : lista) {
-                model.addRow(new Object[]{
-                        a.getId(),
-                        a.getNombre(),
-                        a.getBiografia(),
-                        a.getEstado() == 1 ? "Activo" : "Inactivo" // o usa 1/0 si prefieres
-                });
-            }
-        } catch (Exception ex) {
-            ex.printStackTrace();
-        }
-    }
-
-    private void limpiarFormulario() {
-        txtNombre.setText("");
-        txtBiografia.setText("");
-        cboEstado.setSelectedIndex(0);
-        tblAutores.clearSelection();
     }
 
     public static void main(String[] args) {
