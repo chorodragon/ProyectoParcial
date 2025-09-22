@@ -1,4 +1,4 @@
-// src/main/java/app/dao/AutorDAO.java
+// src/main/java/app/dao/AutorDAO.java (Actualizado)
 package app.dao;
 
 import app.db.Conexion;
@@ -49,6 +49,22 @@ public class AutorDAO {
         return lista;
     }
 
+    // Lista solo autores activos
+    public List<Autor> listarActivos() throws SQLException {
+        String sql = "SELECT id, nombre, biografia, estado FROM autor WHERE estado = 1 ORDER BY nombre";
+        List<Autor> lista = new ArrayList<>();
+
+        try (Connection con = Conexion.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql);
+             ResultSet rs = ps.executeQuery()) {
+
+            while (rs.next()) {
+                lista.add(mapAutor(rs));
+            }
+        }
+        return lista;
+    }
+
     // SELECT WHERE id = ?
     public Autor buscarPorId(int id) throws SQLException {
         String sql = "SELECT id, nombre, biografia, estado FROM autor WHERE id = ?";
@@ -81,7 +97,18 @@ public class AutorDAO {
         }
     }
 
-    // DELETE físico (si prefieres baja lógica, cambia a: UPDATE autor SET estado=0 WHERE id=?)
+    // Eliminación lógica (cambia estado a 0)
+    public boolean eliminarLogico(int id) throws SQLException {
+        String sql = "UPDATE autor SET estado = 0 WHERE id = ?";
+        try (Connection con = Conexion.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+
+            ps.setInt(1, id);
+            return ps.executeUpdate() > 0;
+        }
+    }
+
+    // DELETE físico (si se necesita)
     public boolean eliminar(int id) throws SQLException {
         String sql = "DELETE FROM autor WHERE id = ?";
         try (Connection con = Conexion.getConnection();
@@ -92,13 +119,31 @@ public class AutorDAO {
         }
     }
 
+    // Filtro de búsqueda por nombre en tiempo real
+    public List<Autor> buscarPorNombre(String nombre) throws SQLException {
+        String sql = "SELECT id, nombre, biografia, estado FROM autor WHERE nombre LIKE ? AND estado = 1 ORDER BY nombre";
+        List<Autor> lista = new ArrayList<>();
+
+        try (Connection con = Conexion.getConnection();
+             PreparedStatement ps = con.prepareStatement(sql)) {
+
+            ps.setString(1, "%" + nombre + "%");
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    lista.add(mapAutor(rs));
+                }
+            }
+        }
+        return lista;
+    }
+
     // --- Helper: mapea un ResultSet a Autor
     private Autor mapAutor(ResultSet rs) throws SQLException {
         return new Autor(
                 rs.getInt("id"),
                 rs.getString("nombre"),
                 rs.getString("biografia"),
-                rs.getInt("estado") // BIT en SQL Server ↔ boolean en Java
+                rs.getInt("estado")
         );
     }
 }
